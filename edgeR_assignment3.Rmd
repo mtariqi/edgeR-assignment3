@@ -1,0 +1,312 @@
+---
+title: "Assignment 3 - Differential Expression with edgeR (mobData)"
+author: "YOUR NAME"
+date: "`r format(Sys.Date(), '%B %d, %Y')`"
+output:
+  pdf_document:
+    toc: false
+    number_sections: false
+  html_document: default
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE, message = FALSE, warning = FALSE,
+                      fig.width = 6.5, fig.height = 4.5, fig.align = "center")
+```
+
+# Part A - Setup and data
+
+```{r packages}
+# Run once if needed:
+# if (!require("BiocManager", quietly = TRUE)) install.packages("BiocManager")
+# BiocManager::install(c("edgeR", "baySeq"))
+library(edgeR)
+library(baySeq)
+```
+
+```{r load-data}
+# Relative path: works when this .Rmd sits in the repo root next to /data
+load("data/mobData.RData")
+head(mobData)
+dim(mobData)
+
+mobDataGroups <- c("MM", "MM", "WM", "WM", "WW", "WW")
+# MM = triple mutant shoot grafted onto triple mutant root
+# WM = wild-type shoot grafted onto triple mutant root
+# WW = wild-type shoot grafted onto wild-type root
+data(mobAnnotation)
+head(mobAnnotation)
+
+d <- DGEList(counts = mobData, group = factor(mobDataGroups))
+d
+```
+
+# Part B - Lab steps from "Filtering the data"
+
+## Filtering
+
+```{r filter}
+dim(d)
+d.full <- d                      # keep a copy of the unfiltered object
+head(d$counts)
+head(cpm(d))
+apply(d$counts, 2, sum)          # total counts per sample
+
+# keep loci with > 100 counts-per-million in at least 2 samples
+keep <- rowSums(cpm(d) > 100) >= 2
+d <- d[keep, ]
+dim(d)
+
+# reset library sizes after filtering
+d$samples$lib.size <- colSums(d$counts)
+d$samples
+```
+
+## Normalization (TMM)
+
+```{r normalize}
+d <- calcNormFactors(d)
+d$samples
+```
+
+## Data exploration (MDS)
+
+```{r mds}
+plotMDS(d, method = "bcv", col = as.numeric(d$samples$group),
+        main = "MDS plot (BCV distance)")
+legend("bottomleft", legend = levels(d$samples$group), col = 1:3, pch = 20)
+```
+
+## Estimating dispersion - classic (qCML) model
+
+```{r disp-classic}
+d1 <- estimateCommonDisp(d, verbose = TRUE)
+d1 <- estimateTagwiseDisp(d1)
+names(d1)
+plotBCV(d1, main = "BCV vs average log CPM (classic model)")
+```
+
+## Estimating dispersion - GLM
+
+```{r disp-glm}
+design.mat <- model.matrix(~ 0 + d$samples$group)
+colnames(design.mat) <- levels(d$samples$group)
+design.mat
+
+d2 <- estimateGLMCommonDisp(d, design.mat)
+d2 <- estimateGLMTrendedDisp(d2, design.mat, method = "power")
+d2 <- estimateGLMTagwiseDisp(d2, design.mat)
+plotBCV(d2, main = "BCV vs average log CPM (GLM)")
+```
+
+*("Comparing the models in DESeq and edgeR" is skipped, as instructed.)*
+
+## Differential expression - exact test (lab version)
+
+```{r exact-lab}
+et12 <- exactTest(d1, pair = c(1, 2))   # WM vs MM
+et13 <- exactTest(d1, pair = c(1, 3))   # WW vs MM
+et23 <- exactTest(d1, pair = c(2, 3))   # WW vs WM
+topTags(et12, n = 10)
+
+de1 <- decideTests(et12, adjust.method = "BH", p.value = 0.05)
+summary(de1)
+de1tags12 <- rownames(d1)[as.logical(de1)]
+plotSmear(et12, de.tags = de1tags12, main = "Smear plot: WM vs MM (exact test)")
+abline(h = c(-2, 2), col = "blue")
+```
+
+## Differential expression - GLM (lab version)
+
+```{r glm-lab}
+fit <- glmFit(d2, design.mat)
+lrt12 <- glmLRT(fit, contrast = c(1, -1, 0))
+lrt13 <- glmLRT(fit, contrast = c(1, 0, -1))
+lrt23 <- glmLRT(fit, contrast = c(0, 1, -1))
+topTags(lrt12, n = 10)
+
+de2 <- decideTests(lrt12, adjust.method = "BH", p.value = 0.05)
+summary(de2)
+de2tags12 <- rownames(d2)[as.logical(de2)]
+plotSmear(lrt12, de.tags = de2tags12, main = "Smear plot: MM vs WM (GLM)")
+abline(h = c(-2, 2), col = "blue")
+```
+
+# Part C - Analyses for the homework questions
+
+All WW vs MM comparisons below are oriented the same way: **logFC = log2(WW / MM)**, so
+"downregulated" means lower expression in WW than in MM.
+
+```{r q3-exact-common}
+# Q3: exact test, COMMON dispersion, WW vs MM
+et_WW_MM <- exactTest(d1, pair = c("MM", "WW"), dispersion = "common")
+de_et <- decideTests(et_WW_MM, adjust.method = "BH", p.value = 0.05)
+summary(de_et)
+topTags(et_WW_MM, n = 10)
+
+n_down_et <- sum(de_et == -1)
+n_up_et   <- sum(de_et ==  1)
+n_ns_et   <- sum(de_et ==  0)
+```
+
+```{r q4-glm}
+# Q4: GLM likelihood-ratio test, WW vs MM (contrast WW - MM)
+lrt_WW_MM <- glmLRT(fit, contrast = c(-1, 0, 1))
+de_glm <- decideTests(lrt_WW_MM, adjust.method = "BH", p.value = 0.05)
+summary(de_glm)
+topTags(lrt_WW_MM, n = 10)
+
+n_down_glm <- sum(de_glm == -1)
+n_up_glm   <- sum(de_glm ==  1)
+
+down_et  <- rownames(d1)[de_et  == -1]
+down_glm <- rownames(d2)[de_glm == -1]
+up_et    <- rownames(d1)[de_et  ==  1]
+up_glm   <- rownames(d2)[de_glm ==  1]
+n_down_both <- length(intersect(down_et, down_glm))
+n_up_both   <- length(intersect(up_et, up_glm))
+n_de_et  <- n_down_et + n_up_et
+n_de_both <- n_down_both + n_up_both
+pct_shared <- if (n_de_et > 0) round(100 * n_de_both / n_de_et) else NA
+
+comparison <- data.frame(
+  Method = c("Exact test (common dispersion)", "GLM LRT (tagwise dispersion)", "Shared by both"),
+  Down   = c(n_down_et, n_down_glm, n_down_both),
+  Up     = c(n_up_et,   n_up_glm,   n_up_both))
+knitr::kable(comparison, caption = "WW vs MM, BH-adjusted p < 0.05")
+
+# Note: the lab's lrt13 uses contrast c(1,0,-1) = MM - WW, so its "Down" and "Up"
+# rows are swapped relative to this table. The genes are the same.
+```
+
+```{r q2-numbers, include=FALSE}
+common_bcv <- sqrt(d1$common.dispersion)
+tag_bcv    <- sqrt(d1$tagwise.dispersion)
+rho        <- cor(d1$AveLogCPM, tag_bcv, method = "spearman")
+trend_word <- ifelse(rho < 0, "decreases", "increases")
+low  <- d1$AveLogCPM <= quantile(d1$AveLogCPM, 0.25)
+high <- d1$AveLogCPM >= quantile(d1$AveLogCPM, 0.75)
+med_bcv_low  <- median(tag_bcv[low])
+med_bcv_high <- median(tag_bcv[high])
+```
+
+```{r q5-ql}
+# Q5: a different edgeR method - quasi-likelihood F-test (glmQLFit / glmQLFTest)
+qlfit <- glmQLFit(d2, design.mat)
+qlf_WW_MM <- glmQLFTest(qlfit, contrast = c(-1, 0, 1))
+de_ql <- decideTests(qlf_WW_MM, adjust.method = "BH", p.value = 0.05)
+summary(de_ql)
+n_down_ql <- sum(de_ql == -1)
+n_up_ql   <- sum(de_ql ==  1)
+```
+
+# Homework answers
+
+## Question 1 - What are SL239 and SL240?
+
+```{r q1}
+data.frame(Sample = colnames(d), Group = d$samples$group,
+           lib.size = d$samples$lib.size)
+```
+
+SL239 and SL240 are the two biological replicate libraries of the **WW** group:
+small-RNA sequencing samples from *Arabidopsis* plants in which a **wild-type shoot was
+grafted onto a wild-type root**. They are the control (fully wild-type) condition of the
+grafting experiment, against which the MM samples (SL236, SL260; triple-mutant shoot on
+triple-mutant root) and the WM samples (SL237, SL238; wild-type shoot on triple-mutant
+root) are compared. Each column holds the counts for the 3,000 small-RNA loci in that sample.
+
+## Question 2 - Describe the CPM vs BCV plot
+
+```{r q2-plot, echo=FALSE}
+plotBCV(d1, main = "BCV vs average log CPM")
+```
+
+The plot shows how biological variability relates to abundance for the `r nrow(d1)` loci
+kept after filtering. The x-axis is average expression (log2 counts per million) and the
+y-axis is the biological coefficient of variation (BCV), the square root of the
+negative-binomial dispersion. BCV is the relative variation between biological replicates.
+The red line is the common BCV of `r round(common_bcv, 3)`, meaning that a typical locus
+varies by about `r round(100 * common_bcv)`% between replicates. The black points are the
+tagwise (gene-specific) BCVs.
+
+BCV `r trend_word` as abundance rises (Spearman rho = `r round(rho, 2)`; median BCV
+`r round(med_bcv_low, 3)` in the lowest-abundance quartile vs `r round(med_bcv_high, 3)` in
+the highest). The spread of points is widest at low CPM, where small counts make
+estimates noisy. Some loci lie well above the common line, so variability differs from
+locus to locus. This supports filtering out low-count loci and using tagwise (or trended)
+dispersion rather than one common value for every locus.
+
+*(Check this paragraph against your rendered figure and edit any wording that doesn't match.)*
+
+## Question 3 - Downregulated genes, WW vs MM, exact test with common dispersion
+
+Using `exactTest(d1, pair = c("MM","WW"), dispersion = "common")` and a Benjamini-Hochberg
+FDR cutoff of 0.05, **`r n_down_et` loci are downregulated** in WW relative to MM.
+Another `r n_up_et` are upregulated, and `r n_ns_et` are not significant.
+
+## Question 4 - Comparison with the GLM
+
+```{r q4-table, echo=FALSE}
+knitr::kable(comparison, caption = "WW vs MM, BH-adjusted p < 0.05")
+```
+
+The GLM likelihood-ratio test (`glmFit` + `glmLRT`, contrast WW - MM) finds
+`r n_down_glm` downregulated and `r n_up_glm` upregulated loci, compared with
+`r n_down_et` and `r n_up_et` from the exact test. `r n_de_both` loci
+(`r pct_shared`% of the exact-test calls) are significant in the same direction in both.
+The counts differ mainly because of how variability is modelled. The exact test applies
+one common dispersion to every locus, whereas the GLM uses tagwise dispersions estimated
+with the full design matrix. Loci that are more variable than average therefore lose
+significance under the GLM, and unusually stable loci gain it. The GLM is also the more
+flexible framework: it can handle multiple factors, batch effects and arbitrary contrasts.
+The exact test only works for simple two-group comparisons.
+
+*(If you used the lab's `lrt13`, contrast c(1,0,-1) = MM - WW, your "up" and "down"
+counts will be swapped. State the direction you used.)*
+
+## Question 5 - New plot with a different edgeR method
+
+For this plot I used edgeR's **quasi-likelihood (QL) F-test** (`glmQLFit` +
+`glmQLFTest`), which the edgeR User's Guide recommends for bulk RNA-seq. It is different
+from the exact test and the likelihood-ratio test used in the lab. The plot is an
+**MD (mean-difference) plot** of the WW vs MM comparison.
+
+```{r q5-plot, echo=FALSE, fig.height=5}
+plotMD(qlf_WW_MM, status = de_ql, values = c(1, -1), col = c("red", "blue"),
+       legend = "topright",
+       main = "MD plot: WW vs MM (quasi-likelihood F-test, FDR < 0.05)")
+abline(h = c(-1, 1), col = "darkgrey", lty = 2)
+```
+
+Each point is a locus. The x-axis is its average abundance (log2 CPM), and the y-axis is
+its log2 fold change (WW / MM). Red points are significantly upregulated in WW
+(n = `r n_up_ql`), blue points are significantly downregulated (n = `r n_down_ql`), and
+black points are not significant. The dashed lines mark a 2-fold change.
+
+The plot shows that most loci are centered on logFC = 0, which confirms that TMM
+normalization worked and that most small-RNA loci do not change between genotypes.
+The significant loci are spread across the whole range of abundance, so the
+calls aren't driven only by highly expressed loci. At low abundance, larger fold changes
+are needed to reach significance because count noise is higher. The QL method also
+accounts for uncertainty in the dispersion estimates, so it is usually a little more
+conservative than the LRT. That is why it calls `r n_down_ql + n_up_ql` loci here,
+compared with `r n_down_glm + n_up_glm` for the GLM LRT. The loci that remain significant
+under QL are the most reliable candidates for small RNAs whose abundance depends on the
+wild-type versus triple-mutant genotype.
+
+```{r save-q5, include=FALSE}
+dir.create("output", showWarnings = FALSE, recursive = TRUE)
+png("output/Q5_MDplot_QL_WW_vs_MM.png", width = 1600, height = 1200, res = 200)
+plotMD(qlf_WW_MM, status = de_ql, values = c(1, -1), col = c("red", "blue"),
+       legend = "topright", main = "MD plot: WW vs MM (QL F-test, FDR < 0.05)")
+abline(h = c(-1, 1), col = "darkgrey", lty = 2)
+dev.off()
+write.csv(topTags(et_WW_MM, n = Inf)$table, "output/WW_vs_MM_exactTest_common.csv")
+write.csv(topTags(lrt_WW_MM, n = Inf)$table, "output/WW_vs_MM_glmLRT.csv")
+write.csv(topTags(qlf_WW_MM, n = Inf)$table, "output/WW_vs_MM_glmQLF.csv")
+```
+
+```{r session}
+sessionInfo()
+```
