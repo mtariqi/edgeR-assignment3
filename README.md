@@ -22,7 +22,10 @@ Adapted from the Stanford BIOS221 RNA-seq lab
 
 ## Repository layout
 ```
-edgeR_assignment3.Rmd   # full analysis + answers -> knits to PDF
+edgeR_assignment3.Rmd   # full analysis + answers (param full = TRUE/FALSE)
+edgeR_assignment3_answers.pdf  # answers-only report (submitted)
+edgeR_assignment3_full.pdf     # full workflow with code and all lab steps
+setup_and_run.sh        # installs dependencies (Ubuntu) and builds both PDFs
 data/mobData.RData      # input counts
 output/                 # Q5 plot (PNG) + DE result tables (CSV), created on knit
 ```
@@ -32,8 +35,15 @@ Requirements: R ≥ 4.2, plus the `edgeR`, `baySeq`, and `rmarkdown` packages, a
 installation for PDF output (`tinytex::install_tinytex()`).
 
 ```r
+# manual install, if not using the script:
 if (!require("BiocManager", quietly = TRUE)) install.packages("BiocManager")
 BiocManager::install(c("edgeR", "baySeq"))
 install.packages(c("rmarkdown", "tinytex")); tinytex::install_tinytex()
-rmarkdown::render("edgeR_assignment3.Rmd")
+```
+
+On Ubuntu, one script installs everything and builds both PDFs:
+
+```bash
+bash setup_and_run.sh          # first run: install + build
+bash setup_and_run.sh --run    # later: rebuild only
 ```

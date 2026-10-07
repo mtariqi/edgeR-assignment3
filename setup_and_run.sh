@@ -30,7 +30,12 @@ fi
 echo "== 3. R version check =="
 Rscript -e 'cat(R.version.string, "\n"); stopifnot(getRversion() >= "4.2.0")'
 
-echo "== 4. Knit the report =="
-Rscript -e 'rmarkdown::render("edgeR_assignment3.Rmd", output_format = "pdf_document")'
+echo "== 4a. Answers-only PDF (submit this one) =="
+Rscript -e 'rmarkdown::render("edgeR_assignment3.Rmd", output_format = "pdf_document",
+  output_file = "edgeR_assignment3_answers.pdf", params = list(full = FALSE))'
 
-echo "Done -> edgeR_assignment3.pdf  (plot + CSV tables in output/)"
+echo "== 4b. Full-workflow PDF (code + all lab steps, for GitHub) =="
+Rscript -e 'rmarkdown::render("edgeR_assignment3.Rmd", output_format = "pdf_document",
+  output_file = "edgeR_assignment3_full.pdf", params = list(full = TRUE))'
+
+echo "Done -> edgeR_assignment3_answers.pdf (submit) and edgeR_assignment3_full.pdf (plot + CSVs in output/)"
