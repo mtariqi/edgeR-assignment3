@@ -247,8 +247,9 @@ abundant loci. As a result, the common BCV overstates the variability of most lo
 loci and understates it for highly abundant ones. A minority of loci, mostly between log CPM 6
 and 11, lie well above the main cloud (BCV up to about 0.65); their replicates disagree
 strongly. Overall, variability depends on both abundance and the individual locus, so a single
-common dispersion fits these data poorly. A trended or tagwise dispersion is more appropriate,
-and the GLM BCV plot above shows a fitted trend that also rises with abundance.
+common dispersion fits these data poorly. A trended or tagwise dispersion is more appropriate.
+The trended dispersion fitted in the GLM analysis (`estimateGLMTrendedDisp`) also rises
+with abundance.
 
 ## Question 3 - Downregulated genes, WW vs MM, exact test with common dispersion
 
